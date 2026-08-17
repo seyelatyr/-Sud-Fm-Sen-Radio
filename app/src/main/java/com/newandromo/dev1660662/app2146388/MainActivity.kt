@@ -94,9 +94,11 @@ class MainActivity : ComponentActivity() {
 object RadioAdManager {
     const val BANNER_ID = "ca-app-pub-0241595114429536/9623468443"
     private const val INTERSTITIAL_ID = "ca-app-pub-0241595114429536/3150095684"
+    private const val INTERSTITIAL_MIN_INTERVAL_MS = 5 * 60 * 1000L
+
     private var interstitial: InterstitialAd? = null
     private var loading = false
-    private var stopCount = 0
+    private var lastInterstitialShownAt = 0L
 
     fun preloadInterstitial(context: Context) {
         if (loading || interstitial != null) return
@@ -119,18 +121,29 @@ object RadioAdManager {
         )
     }
 
+    /**
+     * L'interstitiel est affiché uniquement lors d'une vraie coupure logique :
+     * l'utilisateur vient d'appuyer sur STOP. Il n'est jamais déclenché au lancement,
+     * en arrière-plan ou pendant l'écoute. Un délai de 5 minutes évite les répétitions.
+     */
     fun onNaturalStop(activity: Activity) {
-        stopCount++
-        if (stopCount % 2 != 0) {
+        val now = System.currentTimeMillis()
+        if (lastInterstitialShownAt != 0L && now - lastInterstitialShownAt < INTERSTITIAL_MIN_INTERVAL_MS) {
             preloadInterstitial(activity)
             return
         }
+
         val ad = interstitial ?: run {
             preloadInterstitial(activity)
             return
         }
+
         interstitial = null
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdShowedFullScreenContent() {
+                lastInterstitialShownAt = System.currentTimeMillis()
+            }
+
             override fun onAdDismissedFullScreenContent() {
                 preloadInterstitial(activity)
             }
