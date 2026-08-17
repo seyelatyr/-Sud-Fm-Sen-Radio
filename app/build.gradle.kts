@@ -12,8 +12,8 @@ android {
         applicationId = "com.newandromo.dev1660662.app2146388"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1046
-        versionName = "2.0.0"
+        versionCode = 1047
+        versionName = "2.0.1"
     }
 
     buildTypes {
