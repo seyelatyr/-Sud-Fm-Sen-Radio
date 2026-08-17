@@ -184,10 +184,15 @@ private fun SudFmApp(adsReady: Boolean) {
                                     val stopping = isPlaying || isBuffering
                                     val action = if (stopping) RadioPlaybackService.ACTION_STOP else RadioPlaybackService.ACTION_PLAY
                                     val intent = Intent(context, RadioPlaybackService::class.java).setAction(action)
-                                    if (action == RadioPlaybackService.ACTION_PLAY) {
-                                        androidx.core.content.ContextCompat.startForegroundService(context, intent)
-                                    } else {
-                                        context.startService(intent)
+
+                                    // L'utilisateur déclenche la lecture pendant que l'Activity est visible.
+                                    // On démarre donc le MediaSessionService normalement. Media3 le promeut
+                                    // automatiquement en service de premier plan dès que la lecture commence.
+                                    // Cela évite le crash Android "ForegroundServiceDidNotStartInTimeException"
+                                    // lorsque le flux radio met quelques secondes à démarrer.
+                                    context.startService(intent)
+
+                                    if (action == RadioPlaybackService.ACTION_STOP) {
                                         (context as? Activity)?.let { RadioAdManager.onNaturalStop(it) }
                                     }
                                 },
