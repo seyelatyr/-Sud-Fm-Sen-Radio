@@ -31,22 +31,22 @@ jobs:
           APK=app/build/outputs/apk/debug/app-debug.apk
           "$AAPT" dump badging "$APK" | head -1 | tee /tmp/badging.txt
           grep -q "name='com.newandromo.dev1660662.app2146388'" /tmp/badging.txt
-          grep -q "versionCode='1048'" /tmp/badging.txt
+          grep -q "versionCode='1049'" /tmp/badging.txt
           mkdir -p out
-          cp "$APK" out/SUD_FM_SEN_RADIO_V2_0_2_TEST.apk
-          cp app/build/outputs/bundle/release/app-release.aab out/SUD_FM_SEN_RADIO_V2_0_2_UNSIGNED.aab
+          cp "$APK" out/SUD_FM_SEN_RADIO_V2_0_3_TEST.apk
+          cp app/build/outputs/bundle/release/app-release.aab out/SUD_FM_SEN_RADIO_V2_0_3_UNSIGNED.aab
           printf '%s\n' \
-            'SUD FM Sen Radio 2.0.2' \
-            'versionCode 1048' \
+            'SUD FM Sen Radio 2.0.3' \
+            'versionCode 1049' \
             'package com.newandromo.dev1660662.app2146388' \
             'stream https://stream.zeno.fm/8hddc402zbruv' \
-            'continuous Zeno reconnect: STATE_ENDED + player errors + buffering watchdog' \
+            'robust live playback: OkHttp no read timeout + reconnect + network callback + health watchdog' \
             'AdMob app ID ca-app-pub-0241595114429536~2076439740' \
             'AdMob banner ca-app-pub-0241595114429536/9623468443' \
             'AdMob interstitial ca-app-pub-0241595114429536/3150095684' > out/BUILD_INFO.txt
           sha256sum out/* > out/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: sud-fm-sen-radio-v2.0.2
+          name: sud-fm-sen-radio-v2.0.3
           path: out/
           retention-days: 30
