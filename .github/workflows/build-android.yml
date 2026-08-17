@@ -31,15 +31,16 @@ jobs:
           APK=app/build/outputs/apk/debug/app-debug.apk
           "$AAPT" dump badging "$APK" | head -1 | tee /tmp/badging.txt
           grep -q "name='com.newandromo.dev1660662.app2146388'" /tmp/badging.txt
-          grep -q "versionCode='1049'" /tmp/badging.txt
+          grep -q "versionCode='1050'" /tmp/badging.txt
           mkdir -p out
-          cp "$APK" out/SUD_FM_SEN_RADIO_V2_0_3_TEST.apk
-          cp app/build/outputs/bundle/release/app-release.aab out/SUD_FM_SEN_RADIO_V2_0_3_UNSIGNED.aab
+          cp "$APK" out/SUD_FM_SEN_RADIO_V2_0_4_TEST.apk
+          cp app/build/outputs/bundle/release/app-release.aab out/SUD_FM_SEN_RADIO_V2_0_4_UNSIGNED.aab
           printf '%s\n' \
-            'SUD FM Sen Radio 2.0.3' \
-            'versionCode 1049' \
+            'SUD FM Sen Radio 2.0.4' \
+            'versionCode 1050' \
             'package com.newandromo.dev1660662.app2146388' \
             'stream https://stream.zeno.fm/8hddc402zbruv' \
+            'fix: avoid explicit startForegroundService timeout crash; MediaSessionService starts normally and Media3 promotes playback' \
             'robust live playback: OkHttp no read timeout + reconnect + network callback + health watchdog' \
             'AdMob app ID ca-app-pub-0241595114429536~2076439740' \
             'AdMob banner ca-app-pub-0241595114429536/9623468443' \
@@ -47,6 +48,6 @@ jobs:
           sha256sum out/* > out/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: sud-fm-sen-radio-v2.0.3
+          name: sud-fm-sen-radio-v2.0.4
           path: out/
           retention-days: 30
