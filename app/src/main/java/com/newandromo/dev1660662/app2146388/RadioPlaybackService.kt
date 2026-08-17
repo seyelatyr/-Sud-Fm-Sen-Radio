@@ -1,6 +1,10 @@
 package com.newandromo.dev1660662.app2146388
 
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
@@ -10,7 +14,8 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
@@ -18,6 +23,8 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 object RadioStatus {
     private val _isPlaying = MutableStateFlow(false)
@@ -42,38 +49,79 @@ class RadioPlaybackService : MediaSessionService() {
     private var shouldPlay = false
     private var isRestarting = false
     private var reconnectAttempt = 0
+    private var lastPlayingAt = 0L
+    private lateinit var connectivityManager: ConnectivityManager
 
     private val reconnectRunnable = Runnable {
         if (shouldPlay) restartStream("Reconnexion au direct…")
     }
 
-    private val bufferingWatchdog = Runnable {
-        if (shouldPlay && player.playbackState == Player.STATE_BUFFERING) {
-            restartStream("Connexion lente — reconnexion…")
+    private val healthWatchdog = object : Runnable {
+        override fun run() {
+            if (!shouldPlay) return
+
+            val now = System.currentTimeMillis()
+            when {
+                player.isPlaying -> lastPlayingAt = now
+                player.playbackState == Player.STATE_BUFFERING && now - lastPlayingAt > 25_000L -> {
+                    restartStream("Connexion lente — reconnexion…")
+                }
+                player.playbackState == Player.STATE_ENDED || player.playbackState == Player.STATE_IDLE -> {
+                    restartStream("Relance du direct…")
+                }
+            }
+            if (shouldPlay) handler.postDelayed(this, 5_000L)
+        }
+    }
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            if (shouldPlay && !player.isPlaying) {
+                handler.postDelayed({
+                    if (shouldPlay && !player.isPlaying) restartStream("Réseau retrouvé — reconnexion…")
+                }, 600L)
+            }
+        }
+
+        override fun onLost(network: Network) {
+            if (shouldPlay) {
+                RadioStatus.update(playing = false, buffering = true, message = "Réseau interrompu…")
+            }
         }
     }
 
     override fun onCreate() {
         super.onCreate()
 
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("SUD-FM-Sen-Radio/2.0.1 Android")
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(20_000)
-            .setDefaultRequestProperties(
-                mapOf(
-                    "Icy-MetaData" to "1",
-                    "Accept" to "*/*",
-                    "Connection" to "keep-alive"
-                )
-            )
+        val okHttpClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            // Flux radio continu : pas de timeout de lecture qui coupe un direct lors d'un trou réseau.
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .addNetworkInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .header("User-Agent", "SUD-FM-Sen-Radio/2.0.3 Android")
+                    .header("Accept", "audio/mpeg,audio/aac,*/*")
+                    .header("Cache-Control", "no-cache")
+                    .build()
+                chain.proceed(request)
+            }
+            .build()
 
+        val httpFactory = OkHttpDataSource.Factory(okHttpClient)
         val mediaSourceFactory = DefaultMediaSourceFactory(httpFactory)
-            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(20))
+            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(12))
+
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(15_000, 90_000, 1_500, 3_000)
+            .build()
 
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(loadControl)
             .build()
             .apply {
                 setAudioAttributes(
@@ -85,43 +133,44 @@ class RadioPlaybackService : MediaSessionService() {
                 )
                 setHandleAudioBecomingNoisy(true)
                 setWakeMode(C.WAKE_MODE_NETWORK)
-                repeatMode = Player.REPEAT_MODE_ONE
 
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        if (isPlaying) {
+                            lastPlayingAt = System.currentTimeMillis()
+                            reconnectAttempt = 0
+                            cancelReconnect()
+                        }
                         RadioStatus.update(
                             playing = isPlaying,
+                            buffering = !isPlaying && shouldPlay && playbackState == Player.STATE_BUFFERING,
                             message = when {
                                 isPlaying -> "En direct"
                                 shouldPlay -> "Connexion…"
                                 else -> "Lecture arrêtée"
                             }
                         )
-                        if (isPlaying) {
-                            reconnectAttempt = 0
-                            cancelReconnect()
-                            cancelBufferingWatchdog()
-                        }
                     }
 
                     override fun onPlaybackStateChanged(state: Int) {
                         when (state) {
                             Player.STATE_BUFFERING -> {
                                 RadioStatus.update(buffering = true, message = "Connexion au direct…")
-                                scheduleBufferingWatchdog()
                             }
                             Player.STATE_READY -> {
                                 RadioStatus.update(buffering = false)
-                                cancelReconnect()
-                                cancelBufferingWatchdog()
+                                if (shouldPlay && playWhenReady && !isPlaying) {
+                                    handler.postDelayed({
+                                        if (shouldPlay && playbackState == Player.STATE_READY && !isPlaying) play()
+                                    }, 500L)
+                                }
                             }
                             Player.STATE_ENDED -> {
                                 RadioStatus.update(playing = false, buffering = true, message = "Relance du direct…")
-                                if (shouldPlay && !isRestarting) scheduleReconnect(350)
+                                if (shouldPlay && !isRestarting) scheduleReconnect(250L)
                             }
                             Player.STATE_IDLE -> {
-                                RadioStatus.update(buffering = false)
-                                if (shouldPlay && !isRestarting && player.playerError == null) scheduleReconnect(800)
+                                if (shouldPlay && !isRestarting && playerError == null) scheduleReconnect(700L)
                             }
                         }
                     }
@@ -134,44 +183,55 @@ class RadioPlaybackService : MediaSessionService() {
             }
 
         mediaSession = MediaSession.Builder(this, player).build()
+
+        connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        runCatching { connectivityManager.registerDefaultNetworkCallback(networkCallback) }
     }
 
     private fun startStream() {
         shouldPlay = true
         reconnectAttempt = 0
+        lastPlayingAt = System.currentTimeMillis()
         restartStream("Connexion au direct…")
+        startHealthWatchdog()
     }
 
     private fun restartStream(status: String) {
         if (!shouldPlay || isRestarting) return
         isRestarting = true
         cancelReconnect()
-        cancelBufferingWatchdog()
 
         try {
-            player.stop()
-            player.clearMediaItems()
+            // Ne pas appeler player.stop() ici : un bref arrêt peut faire quitter le service média
+            // du premier plan. On remplace directement la source et on garde playWhenReady actif.
+            player.playWhenReady = true
             player.setMediaItem(buildLiveItem(), true)
             player.prepare()
-            player.playWhenReady = true
             RadioStatus.update(playing = false, buffering = true, message = status)
-            scheduleBufferingWatchdog()
         } finally {
             isRestarting = false
         }
     }
 
-    private fun buildLiveItem(): MediaItem = MediaItem.Builder()
-        .setUri(STREAM_URL)
-        .setMediaId("sud-fm-live")
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle("SUD FM Sénégal")
-                .setArtist("En direct")
-                .setAlbumTitle("SUD FM Sen Radio")
-                .build()
-        )
-        .build()
+    private fun buildLiveItem(): MediaItem {
+        // Une URL légèrement unique force une nouvelle connexion réseau après une coupure CDN/Zeno.
+        val uri = Uri.parse(STREAM_URL)
+            .buildUpon()
+            .appendQueryParameter("_", System.currentTimeMillis().toString())
+            .build()
+
+        return MediaItem.Builder()
+            .setUri(uri)
+            .setMediaId("sud-fm-live")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle("SUD FM Sénégal")
+                    .setArtist("En direct")
+                    .setAlbumTitle("SUD FM Sen Radio")
+                    .build()
+            )
+            .build()
+    }
 
     private fun scheduleReconnect(delayMs: Long) {
         if (!shouldPlay) return
@@ -180,34 +240,31 @@ class RadioPlaybackService : MediaSessionService() {
     }
 
     private fun nextRetryDelay(): Long {
-        reconnectAttempt = (reconnectAttempt + 1).coerceAtMost(6)
+        reconnectAttempt = (reconnectAttempt + 1).coerceAtMost(7)
         return when (reconnectAttempt) {
-            1 -> 500L
-            2 -> 1_000L
-            3 -> 1_500L
-            4 -> 2_500L
-            else -> 4_000L
+            1 -> 300L
+            2 -> 700L
+            3 -> 1_200L
+            4 -> 2_000L
+            5 -> 3_000L
+            else -> 5_000L
         }
     }
 
-    private fun scheduleBufferingWatchdog() {
-        cancelBufferingWatchdog()
-        handler.postDelayed(bufferingWatchdog, 18_000)
+    private fun startHealthWatchdog() {
+        handler.removeCallbacks(healthWatchdog)
+        handler.postDelayed(healthWatchdog, 5_000L)
     }
 
     private fun cancelReconnect() {
         handler.removeCallbacks(reconnectRunnable)
     }
 
-    private fun cancelBufferingWatchdog() {
-        handler.removeCallbacks(bufferingWatchdog)
-    }
-
     private fun stopStream() {
         shouldPlay = false
         reconnectAttempt = 0
         cancelReconnect()
-        cancelBufferingWatchdog()
+        handler.removeCallbacks(healthWatchdog)
         player.stop()
         player.clearMediaItems()
         RadioStatus.update(playing = false, buffering = false, message = "Lecture arrêtée")
@@ -229,7 +286,10 @@ class RadioPlaybackService : MediaSessionService() {
     override fun onDestroy() {
         shouldPlay = false
         cancelReconnect()
-        cancelBufferingWatchdog()
+        handler.removeCallbacks(healthWatchdog)
+        if (::connectivityManager.isInitialized) {
+            runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
+        }
         mediaSession?.release()
         player.release()
         super.onDestroy()
