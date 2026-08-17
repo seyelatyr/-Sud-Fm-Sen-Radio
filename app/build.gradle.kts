@@ -12,8 +12,8 @@ android {
         applicationId = "com.newandromo.dev1660662.app2146388"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1048
-        versionName = "2.0.2"
+        versionCode = 1049
+        versionName = "2.0.3"
     }
 
     buildTypes {
@@ -49,6 +49,7 @@ dependencies {
     implementation("androidx.media3:media3-common:1.10.1")
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-session:1.10.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.10.1")
 
     implementation("com.google.android.gms:play-services-ads:25.4.0")
     implementation("com.google.android.ump:user-messaging-platform:4.0.0")
