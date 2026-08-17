@@ -31,7 +31,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,7 +45,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.android.gms.ads.AdListener
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
@@ -94,6 +92,7 @@ class MainActivity : ComponentActivity() {
 }
 
 object RadioAdManager {
+    const val BANNER_ID = "ca-app-pub-0241595114429536/9623468443"
     private const val INTERSTITIAL_ID = "ca-app-pub-0241595114429536/3150095684"
     private var interstitial: InterstitialAd? = null
     private var loading = false
@@ -219,7 +218,7 @@ private fun SudFmApp(adsReady: Boolean) {
                     )
                     if (adsReady) {
                         Spacer(Modifier.height(12.dp))
-                        AdaptiveAdMobBanner()
+                        SudFmAdMobBanner()
                     }
                 }
             }
@@ -228,33 +227,17 @@ private fun SudFmApp(adsReady: Boolean) {
 }
 
 @Composable
-private fun AdaptiveAdMobBanner() {
-    // Legacy banner candidates recovered from the previous SUD FM app.
-    // The confirmed interstitial 3150095684 is intentionally NOT used here.
-    val candidates = remember {
-        listOf(
-            "ca-app-pub-0241595114429536/1090661138",
-            "ca-app-pub-0241595114429536/1652933768"
-        )
-    }
+private fun SudFmAdMobBanner() {
     AndroidView(
         modifier = Modifier.fillMaxWidth().height(60.dp).clip(RoundedCornerShape(10.dp)),
         factory = { ctx ->
             FrameLayout(ctx).apply {
-                fun tryLoad(index: Int) {
-                    if (index >= candidates.size) return
-                    removeAllViews()
-                    val ad = AdView(ctx).apply {
-                        adUnitId = candidates[index]
-                        setAdSize(AdSize.BANNER)
-                        adListener = object : AdListener() {
-                            override fun onAdFailedToLoad(error: LoadAdError) { tryLoad(index + 1) }
-                        }
-                    }
-                    addView(ad, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
-                    ad.loadAd(AdRequest.Builder().build())
+                val ad = AdView(ctx).apply {
+                    adUnitId = RadioAdManager.BANNER_ID
+                    setAdSize(AdSize.BANNER)
+                    loadAd(AdRequest.Builder().build())
                 }
-                tryLoad(0)
+                addView(ad, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
             }
         }
     )
