@@ -1,8 +1,6 @@
 package com.newandromo.dev1660662.app2146388
 
-import android.app.Activity
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
@@ -20,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -167,7 +166,6 @@ private fun SudFmApp(adsReady: Boolean) {
 
 @Composable
 private fun AdaptiveAdMobBanner() {
-    val context = LocalContext.current
     val candidates = remember { listOf(
         "ca-app-pub-0241595114429536/1090661138",
         "ca-app-pub-0241595114429536/1652933768",
