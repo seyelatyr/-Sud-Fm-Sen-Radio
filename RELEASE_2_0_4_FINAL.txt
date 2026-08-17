@@ -1,0 +1,6 @@
+SUD FM Sen Radio 2.0.4 final release candidate
+versionCode 1050
+API 36
+Banner AdMob enabled
+Interstitial AdMob enabled at user STOP transition with 5 minute cooldown
+Playback hardened for continuous Zeno streaming
