@@ -1,5 +1,7 @@
 package com.newandromo.dev1660662.app2146388
 
+import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.FrameLayout
@@ -48,8 +50,11 @@ import com.google.android.gms.ads.AdListener
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
+import com.google.android.gms.ads.FullScreenContentCallback
 import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.google.android.ump.ConsentRequestParameters
 import com.google.android.ump.UserMessagingPlatform
 
@@ -81,7 +86,61 @@ class MainActivity : ComponentActivity() {
 
     private fun initializeAds() {
         if (adsReady) return
-        MobileAds.initialize(this) { adsReady = true }
+        MobileAds.initialize(this) {
+            adsReady = true
+            RadioAdManager.preloadInterstitial(this)
+        }
+    }
+}
+
+object RadioAdManager {
+    private const val INTERSTITIAL_ID = "ca-app-pub-0241595114429536/3150095684"
+    private var interstitial: InterstitialAd? = null
+    private var loading = false
+    private var stopCount = 0
+
+    fun preloadInterstitial(context: Context) {
+        if (loading || interstitial != null) return
+        loading = true
+        InterstitialAd.load(
+            context,
+            INTERSTITIAL_ID,
+            AdRequest.Builder().build(),
+            object : InterstitialAdLoadCallback() {
+                override fun onAdLoaded(ad: InterstitialAd) {
+                    loading = false
+                    interstitial = ad
+                }
+
+                override fun onAdFailedToLoad(error: LoadAdError) {
+                    loading = false
+                    interstitial = null
+                }
+            }
+        )
+    }
+
+    fun onNaturalStop(activity: Activity) {
+        stopCount++
+        if (stopCount % 2 != 0) {
+            preloadInterstitial(activity)
+            return
+        }
+        val ad = interstitial ?: run {
+            preloadInterstitial(activity)
+            return
+        }
+        interstitial = null
+        ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdDismissedFullScreenContent() {
+                preloadInterstitial(activity)
+            }
+
+            override fun onAdFailedToShowFullScreenContent(adError: com.google.android.gms.ads.AdError) {
+                preloadInterstitial(activity)
+            }
+        }
+        ad.show(activity)
     }
 }
 
@@ -123,10 +182,15 @@ private fun SudFmApp(adsReady: Boolean) {
                             }
                             Button(
                                 onClick = {
-                                    val action = if (isPlaying || isBuffering) RadioPlaybackService.ACTION_STOP else RadioPlaybackService.ACTION_PLAY
+                                    val stopping = isPlaying || isBuffering
+                                    val action = if (stopping) RadioPlaybackService.ACTION_STOP else RadioPlaybackService.ACTION_PLAY
                                     val intent = Intent(context, RadioPlaybackService::class.java).setAction(action)
-                                    if (action == RadioPlaybackService.ACTION_PLAY) androidx.core.content.ContextCompat.startForegroundService(context, intent)
-                                    else context.startService(intent)
+                                    if (action == RadioPlaybackService.ACTION_PLAY) {
+                                        androidx.core.content.ContextCompat.startForegroundService(context, intent)
+                                    } else {
+                                        context.startService(intent)
+                                        (context as? Activity)?.let { RadioAdManager.onNaturalStop(it) }
+                                    }
                                 },
                                 modifier = Modifier.size(112.dp),
                                 shape = CircleShape,
@@ -165,11 +229,14 @@ private fun SudFmApp(adsReady: Boolean) {
 
 @Composable
 private fun AdaptiveAdMobBanner() {
-    val candidates = remember { listOf(
-        "ca-app-pub-0241595114429536/1090661138",
-        "ca-app-pub-0241595114429536/1652933768",
-        "ca-app-pub-0241595114429536/3150095684"
-    ) }
+    // Legacy banner candidates recovered from the previous SUD FM app.
+    // The confirmed interstitial 3150095684 is intentionally NOT used here.
+    val candidates = remember {
+        listOf(
+            "ca-app-pub-0241595114429536/1090661138",
+            "ca-app-pub-0241595114429536/1652933768"
+        )
+    }
     AndroidView(
         modifier = Modifier.fillMaxWidth().height(60.dp).clip(RoundedCornerShape(10.dp)),
         factory = { ctx ->
